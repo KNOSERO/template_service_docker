@@ -8,13 +8,28 @@ pipeline {
         ansiColor('xterm')
     }
     environment {
-        REPO_URL = 'https://github.com/KNOSERO/docker_services.git'
         CREDITS_ID = 'github-token'
-        ACCOUNT = 'KNOSERO'
-        REPO = 'docker_services'
     }
 
     stages {
+        stage('Init ENV') {
+            steps {
+                script {
+                    def repoUrl = scm.getUserRemoteConfigs()[0].getUrl()
+                    repoUrl = repoUrl.replaceAll(/\.git$/, "")
+
+                    def parts = repoUrl.tokenize('/')
+                    env.ACCOUNT = parts[-2]
+                    env.REPO    = parts[-1]
+                    env.REPO_URL = repoUrl + ".git"
+
+                    echo "ACCOUNT=${env.ACCOUNT}"
+                    echo "REPO=${env.REPO}"
+                    echo "REPO_URL=${env.REPO_URL}"
+                }
+            }
+        }
+
         stage('Checkout') {
             steps {
                 checkout([$class: 'GitSCM',
@@ -65,24 +80,6 @@ pipeline {
         stage('Prepare Config') {
             steps {
                 script {
-                    def credsMap = [
-                        vpn: 'secret-file-vpn'
-                    ]
-
-                    def credentialsId = credsMap[params.SERVICE]
-
-                    if (credentialsId) {
-                        echo "Używam sekretnych plików: ${credentialsId}"
-                        withCredentials([file(credentialsId: credentialsId, variable: 'SECRET_FILE')]) {
-                            sh """
-                                mkdir -p ${params.SERVICE}
-                                cp "\$SECRET_FILE" "${params.SERVICE}/.env"
-                            """
-                        }
-                    } else {
-                        echo "Brak skonfigurowanego sekretu dla ${params.SERVICE}, pomijam"
-                    }
-
                     writeFile file: 'inventory.ini', text: params.CONFIG
                 }
             }
@@ -95,7 +92,6 @@ pipeline {
             steps {
                 script {
                     def playbookPath = "playbook.yml"
-                    sh "ansible-galaxy install -r ansible/requirements.yml"
                     sh "ansible-playbook -i inventory.ini ${playbookPath}"
                 }
             }

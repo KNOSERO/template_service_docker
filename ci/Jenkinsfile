@@ -8,19 +8,33 @@ pipeline {
         ansiColor('xterm')
     }
     environment {
-        REPO_URL = 'https://github.com/KNOSERO/docker_services.git'
         DEFAULT_BRANCH = 'master'
         CREDITS_ID = 'github-token'
         SECRET_WEBHOOK = 'github-secret-webhook'
-        ACCOUNT = 'KNOSERO'
-        REPO = 'docker_services'
-        PIPELINE_NAME = 'docker_service_validate'
     }
     stages {
+        stage('Init ENV') {
+            steps {
+                script {
+                    def repoUrl = scm.getUserRemoteConfigs()[0].getUrl()
+                    repoUrl = repoUrl.replaceAll(/\.git$/, "")
+
+                    def parts = repoUrl.tokenize('/')
+                    env.ACCOUNT = parts[-2]
+                    env.REPO    = parts[-1]
+                    env.REPO_URL = repoUrl + ".git"
+
+                    echo "ACCOUNT=${env.ACCOUNT}"
+                    echo "REPO=${env.REPO}"
+                    echo "REPO_URL=${env.REPO_URL}"
+                }
+            }
+        }
+
         stage('Configure Triggers') {
             steps {
                 script {
-                    withCredentials([string(credentialsId: 'docker_service_token', variable: 'TOKEN_WEBHOOK')]) {
+                    withCredentials([string(credentialsId: env.REPO + '_token', variable: 'TOKEN_WEBHOOK')]) {
                         properties([
                             pipelineTriggers([
                                 [
@@ -101,7 +115,7 @@ pipeline {
                                              account: env.ACCOUNT,
                                              repo: env.REPO,
                                              sha: "${sha}",
-                                             context: env.PIPELINE_NAME,
+                                             context: env.REPO + "_validate",
                                              status: 'PENDING',
                                              description: 'Pipeline started'
                             }
@@ -124,10 +138,12 @@ pipeline {
         }
 
         stage('Test') {
-            script {
-                sh '''
-                    bash ./docker/validate_docker.sh
-                '''
+            steps {
+                script {
+                    sh '''
+                        bash ./docker/validate_docker.sh
+                    '''
+                }
             }
         }
     }
@@ -140,7 +156,7 @@ pipeline {
                                  account: env.ACCOUNT,
                                  repo: env.REPO,
                                  sha: "${sha}",
-                                 context: env.PIPELINE_NAME,
+                                 context: env.REPO + "_validate",
                                  status: 'SUCCESS',
                                  description: 'All stages passed ✅'
                 }
@@ -154,7 +170,7 @@ pipeline {
                                  account: env.ACCOUNT,
                                  repo: env.REPO,
                                  sha: "${sha}",
-                                 context: env.PIPELINE_NAME,
+                                 context: env.REPO + "_validate",
                                  status: 'FAILURE',
                                  description: 'Pipeline failed ❌'
                 }

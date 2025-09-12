@@ -1,3 +1,5 @@
+@Library('jenkins_shared_lib') _
+
 pipeline {
     agent {
         label 'k3s'
@@ -16,17 +18,7 @@ pipeline {
         stage('Init ENV') {
             steps {
                 script {
-                    def repoUrl = scm.getUserRemoteConfigs()[0].getUrl()
-                    repoUrl = repoUrl.replaceAll(/\.git$/, "")
-
-                    def parts = repoUrl.tokenize('/')
-                    env.ACCOUNT = parts[-2]
-                    env.REPO    = parts[-1]
-                    env.REPO_URL = repoUrl + ".git"
-
-                    echo "ACCOUNT=${env.ACCOUNT}"
-                    echo "REPO=${env.REPO}"
-                    echo "REPO_URL=${env.REPO_URL}"
+                    initEnv()
                 }
             }
         }
@@ -34,25 +26,7 @@ pipeline {
         stage('Configure Triggers') {
             steps {
                 script {
-                    withCredentials([string(credentialsId: env.REPO + '_token', variable: 'TOKEN_WEBHOOK')]) {
-                        properties([
-                            pipelineTriggers([
-                                [
-                                    $class: 'GenericTrigger',
-                                    genericVariables: [
-                                        [key: 'PR_ACTION', value: '$.action',                 expressionType: 'JSONPath', defaultValue: ''],
-                                        [key: 'PR_NUMBER', value: '$.number',                 expressionType: 'JSONPath', defaultValue: ''],
-                                        [key: 'PR_SHA',    value: '$.pull_request.head.sha',  expressionType: 'JSONPath', defaultValue: '']
-                                    ],
-                                    token: TOKEN_WEBHOOK,
-                                    printContributedVariables: true,
-                                    printPostContent: false,
-                                    regexpFilterText: '$PR_ACTION',
-                                    regexpFilterExpression: 'opened|reopened|synchronize'
-                                ]
-                            ])
-                        ])
-                    }
+                    configureTriggers()
                 }
             }
         }
@@ -62,42 +36,14 @@ pipeline {
                 stage('Checkout PR') {
                     when { expression { (env.PR_ACTION in ['opened','reopened','synchronize']) && env.PR_NUMBER }}
                     steps {
-                        script {
-                            checkout([$class: 'GitSCM',
-                                userRemoteConfigs: [[
-                                    name: 'origin',
-                                    url: env.REPO_URL,
-                                    credentialsId: env.CREDITS_ID,
-                                    refspec: '+refs/heads/*:refs/remotes/origin/* +refs/pull/*:refs/remotes/origin/pr/*'
-                                ]],
-                                branches: [[ name: "origin/pr/${env.PR_NUMBER}/merge" ]],
-                                extensions: [
-                                    [$class: 'CloneOption', shallow: true, depth: 25, noTags: true, timeout: 240],
-                                    [$class: 'PruneStaleBranch'],
-                                    [$class: 'CleanBeforeCheckout']
-                                ]
-                            ])
-                        }
+                        checkoutPullRequest()
                     }
                 }
 
                 stage('Checkout Manual') {
                     when { not { expression { env.PR_ACTION in ['opened','reopened','synchronize'] } } }
                     steps {
-                        checkout([$class: 'GitSCM',
-                            userRemoteConfigs: [[
-                                name: 'origin',
-                                url: env.REPO_URL,
-                                credentialsId: env.CREDITS_ID,
-                                refspec: '+refs/heads/*:refs/remotes/origin/*'
-                            ]],
-                            branches: [[ name: "*/${env.DEFAULT_BRANCH}" ]],
-                            extensions: [
-                                [$class: 'CloneOption', shallow: true, depth: 25, noTags: true, timeout: 240],
-                                [$class: 'PruneStaleBranch'],
-                                [$class: 'CleanBeforeCheckout']
-                            ]
-                        ])
+                        checkoutBranch("*/${env.DEFAULT_BRANCH}")
                     }
                 }
             }
@@ -109,16 +55,7 @@ pipeline {
                     when { expression { (env.PR_ACTION in ['opened','reopened','synchronize']) && env.PR_NUMBER }}
                     steps {
                         script {
-                            def sha = env.PR_SHA?.trim() ? env.PR_SHA : env.CHECKOUT_SHA
-                            if (sha?.trim()) {
-                                githubNotify credentialsId: env.CREDITS_ID,
-                                             account: env.ACCOUNT,
-                                             repo: env.REPO,
-                                             sha: "${sha}",
-                                             context: env.REPO + "_validate",
-                                             status: 'PENDING',
-                                             description: 'Pipeline started'
-                            }
+                            githubWebhook('PENDING', 'Pipeline started')
                         }
                     }
                 }
@@ -150,30 +87,12 @@ pipeline {
     post {
         success {
             script {
-                def sha = env.PR_SHA?.trim() ? env.PR_SHA : env.CHECKOUT_SHA
-                if (sha?.trim()) {
-                    githubNotify credentialsId: env.CREDITS_ID,
-                                 account: env.ACCOUNT,
-                                 repo: env.REPO,
-                                 sha: "${sha}",
-                                 context: env.REPO + "_validate",
-                                 status: 'SUCCESS',
-                                 description: 'All stages passed ✅'
-                }
+                githubWebhook('SUCCESS', 'All stages passed ✅')
             }
         }
         failure {
             script {
-                def sha = env.PR_SHA?.trim() ? env.PR_SHA : env.CHECKOUT_SHA
-                if (sha?.trim()) {
-                    githubNotify credentialsId: env.CREDITS_ID,
-                                 account: env.ACCOUNT,
-                                 repo: env.REPO,
-                                 sha: "${sha}",
-                                 context: env.REPO + "_validate",
-                                 status: 'FAILURE',
-                                 description: 'Pipeline failed ❌'
-                }
+                githubWebhook('FAILURE', 'Pipeline failed ❌')
             }
         }
     }

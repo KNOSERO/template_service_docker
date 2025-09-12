@@ -34,14 +34,14 @@ pipeline {
         stage('Checkout') {
             parallel {
                 stage('Checkout PR') {
-                    when { expression { (env.PR_ACTION in ['opened','reopened','synchronize']) && env.PR_NUMBER }}
+                    when { expression { isPullRequestBuild() } }
                     steps {
                         checkoutPullRequest()
                     }
                 }
 
                 stage('Checkout Manual') {
-                    when { not { expression { env.PR_ACTION in ['opened','reopened','synchronize'] } } }
+                    when { not { expression { isPullRequestBuild() } } }
                     steps {
                         checkoutBranch("*/${env.DEFAULT_BRANCH}")
                     }
@@ -52,7 +52,7 @@ pipeline {
         stage('Init') {
             parallel {
                 stage('Init Pipeline Status') {
-                    when { expression { (env.PR_ACTION in ['opened','reopened','synchronize']) && env.PR_NUMBER }}
+                    when { expression { isPullRequestBuild() } }
                     steps {
                         script {
                             githubWebhook('PENDING', 'Pipeline started')

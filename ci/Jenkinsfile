@@ -59,8 +59,13 @@ pipeline {
                         }
                     }
                 }
-
-                initSubmodulesStage()
+                stage('Init Submodules') {
+                    steps {
+                        script {
+                            initSubmodulesStage()
+                        }
+                    }
+                }
             }
         }
 

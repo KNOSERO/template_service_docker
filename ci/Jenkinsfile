@@ -62,7 +62,7 @@ pipeline {
                 stage('Init Submodules') {
                     steps {
                         script {
-                            initSubmodulesStage()
+                            initSubmodules()
                         }
                     }
                 }
